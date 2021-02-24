@@ -1,0 +1,91 @@
+{
+  "name": "Clubhouse",
+  "version": "1.0.0",
+  "description": "Clubhouse for desktop",
+  "main": "./dist/main.js",
+  "scripts": {
+    "dev": "npm-run-all -p dev:react electron:serve",
+    "dev:electron": "cross-env NODE_ENV=development webpack --config webpack/electron.webpack.js --mode development && npm run start:electron",
+    "dev:react": "cross-env NODE_ENV=development webpack-dev-server --config webpack/react.webpack.js --mode development",
+    "electron:serve": "wait-on http-get://localhost:4000/ && npm run dev:electron",
+    "start:electron": "electron .",
+    "build": "npm-run-all build:electron build:react",
+    "build:run": "npm-run-all build start:electron",
+    "build:electron": "webpack --config webpack/electron.webpack.js",
+    "build:react": "webpack --config webpack/react.webpack.js",
+    "package": "npm-run-all build package:dist",
+    "package:dist": "electron-builder --dir"
+  },
+  "keywords": [],
+  "author": "Narek Abovyan <xeroxaltox@gmail.com>",
+  "license": "MIT",
+  "agora_electron": {
+    "electron_version": "8.2.2",
+    "prebuilt": false,
+    "platform": "darwin",
+    "debug": false,
+    "silent": false,
+    "lib_sdk_mac": "https://download.agora.io/sdk/release/Agora_Native_SDK_for_Mac_v3_1_1_FULL.zip"
+  },
+  "devDependencies": {
+    "@babel/plugin-proposal-class-properties": "^7.12.13",
+    "@types/node-fetch": "^2.5.8",
+    "@babel/core": "^7.9.0",
+    "@babel/preset-env": "^7.9.5",
+    "@babel/preset-react": "^7.9.4",
+    "@babel/preset-typescript": "^7.9.0",
+    "@testing-library/jest-dom": "^5.11.0",
+    "@testing-library/react": "^10.4.3",
+    "@types/electron-devtools-installer": "^2.2.0",
+    "@types/react": "^16.9.34",
+    "@types/react-dom": "^16.9.6",
+    "@types/styled-components": "^5.1.0",
+    "@typescript-eslint/eslint-plugin": "^3.4.0",
+    "@typescript-eslint/parser": "^3.4.0",
+    "babel-loader": "^8.1.0",
+    "cross-env": "^7.0.2",
+    "electron": "^8.2.2",
+    "electron-builder": "^22.7.0",
+    "electron-devtools-installer": "^3.1.0",
+    "html-webpack-plugin": "^4.2.0",
+    "husky": "^4.2.5",
+    "lint-staged": "^10.2.11",
+    "npm-run-all": "^4.1.5",
+    "prettier": "^2.0.5",
+    "ts-jest": "^26.1.1",
+    "typescript": "^3.9.5",
+    "wait-on": "^5.0.1",
+    "webpack": "^4.42.1",
+    "webpack-cli": "^3.3.11",
+    "webpack-dev-server": "^3.10.3"
+  },
+  "dependencies": {
+    "@types/pubnub": "^4.29.0",
+    "@types/uuid": "^8.3.0",
+    "agora-electron-sdk": "2.9.0-rc.102-build.4385",
+    "clubhouse-api": "git+https://github.com/Seia-Soto/clubhouse-api",
+    "css-loader": "^5.0.2",
+    "node-fetch": "^2.6.1",
+    "pubnub": "^4.29.11",
+    "react": "^16.13.1",
+    "react-dom": "^16.13.1",
+    "style-loader": "^2.0.0",
+    "styled-components": "^5.1.1",
+    "uuid": "^8.3.2"
+  },
+  "build": {
+    "appId": null,
+    "mac": {
+      "identity": null,
+      "category": "public.app-category.video",
+      "hardenedRuntime": false
+    },
+    "directories": {
+      "output": "packages"
+    },
+    "files": [
+      "package.json",
+      "dist/**"
+    ]
+  }
+}

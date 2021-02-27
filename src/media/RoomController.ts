@@ -1,8 +1,9 @@
 import { sharedMediaEngine } from './index'
 import Pubnub from 'pubnub'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getClient } from '../net/ClubHouseApi'
-import { PubSub } from '../utils/PubSub'
+import { PubSub, XPubSub } from '../utils/PubSub'
+import { MultiList } from '../utils/MultiList'
 
 const PUBNUB_PUB_KEY = 'pub-c-6878d382-5ae6-4494-9099-f930f938868b'
 const PUBNUB_SUB_KEY = 'sub-c-a4abea84-9ca3-11ea-8e71-f2b83ac9263d'
@@ -13,11 +14,10 @@ type Room = {
 }
 
 type InternalEvents =
-    { type: 'join_room' } |
-    { type: 'leave_room' } |
+    { type: 'current_room_updated' } |
     { type: 'members_updated' }
 
-type RoomMember = {
+export type RoomMember = {
     user_id: number,
     name: string,
     photo_url?: string,
@@ -32,11 +32,58 @@ type RoomMember = {
     is_invited_as_speaker: boolean
 }
 
+const MemberFilters = {
+    isSpeaker: (m: RoomMember) => m.is_speaker,
+    isFollowedBySpeakers: (m: RoomMember) => !m.is_speaker && m.is_followed_by_speaker,
+    isListener: (m: RoomMember) => !m.is_speaker && !m.is_followed_by_speaker
+}
+
+class RoomMembersEngine {
+    list = new MultiList<RoomMember, 'user_id'>([
+        { name: 'all', checker: item => true },
+        { name: 'speakers', checker: MemberFilters.isSpeaker },
+        { name: 'followed_by_speakers', checker: MemberFilters.isFollowedBySpeakers },
+        { name: 'listeners', checker: MemberFilters.isListener },
+    ], 'user_id')
+
+    initialize = (members: RoomMember[]) => {
+        this.list.clear()
+        this.list.insertBulkUnsafe(members)
+    }
+
+    onJoin = (member: RoomMember) => {
+        this.list.insert({...member})
+    }
+
+    onLeave = (user_id: number) => {
+        this.list.remove(user_id)
+    }
+
+    onAddSpeaker = (member: RoomMember) => {
+        this.list.update(member)
+    }
+
+    useList = (listName: 'all'|'speakers'|'followed_by_speakers'|'listeners') => {
+        let [list, setList] = useState([...this.list.getList(listName)])
+        useEffect(() => {
+            return this.list.events.subscribe('list_updated', (ev) => {
+                if (ev.list === listName) {
+                    setList([...this.list.getList(listName)])
+                }
+            })
+        }, [])
+
+        return list
+    }
+}
+
 class RoomEngine {
-    events = new PubSub<InternalEvents>()
+    events = new XPubSub<InternalEvents>()
     currentRoom: Room | null = null
+    // TODO: split to speakers, listeners
     currentRoomMembers: RoomMember[] = []
     pubnub: Pubnub | null = null
+    members = new RoomMembersEngine()
 
     joinRoom = async (room: Room) => {
         if (this.currentRoom) {
@@ -57,12 +104,13 @@ class RoomEngine {
 
         this.currentRoom = res
         this.currentRoomMembers = res.users
+        this.members.initialize(res.users)
 
         sharedMediaEngine.joinChannel(res.token, room.channel, '', uid)
         sharedMediaEngine.enableAudioVolumeIndication(300, 3, true)
 
-        this.events.publish({ type: 'join_room' })
-        this.events.publish({ type: 'members_updated' })
+        this.events.post({ type: 'current_room_updated' })
+        this.events.post({ type: 'members_updated' })
 
         this.pubnub = new Pubnub({
             publishKey: PUBNUB_PUB_KEY,
@@ -107,8 +155,8 @@ class RoomEngine {
         this.currentRoom = null
 
         // Notify hooks
-        this.events.publish({ type: 'leave_room' })
-        this.events.publish({ type: 'members_updated' })
+        this.events.post({ type: 'current_room_updated' })
+        this.events.post({ type: 'members_updated' })
     }
 
     useCurrentlySpeaking = () => {
@@ -137,11 +185,11 @@ class RoomEngine {
         let [currentRoom, setCurrentRoom] = useState<any>(this.currentRoom)
 
         useEffect(() => {
-            return this.events.subscribe(ev => {
-                if (ev.type == 'join_room') {
-                    setCurrentRoom(this.currentRoom)
-                } else if (ev.type === 'leave_room') {
+            return this.events.subscribe('current_room_updated',ev => {
+                if (!this.currentRoom) {
                     setCurrentRoom(null)
+                } else {
+                    setCurrentRoom({...this.currentRoom})
                 }
             })
         }, [])
@@ -150,13 +198,12 @@ class RoomEngine {
     }
 
     useMembers = () => {
+        // TODO: throttle for big rooms
         let [members, setMembers] = useState<RoomMember[]>(this.currentRoomMembers)
 
         useEffect(() => {
-            return this.events.subscribe(ev => {
-                if (ev.type == 'members_updated') {
-                    setMembers([...this.currentRoomMembers])
-                }
+            return this.events.subscribe('members_updated', ev => {
+                setMembers([...this.currentRoomMembers])
             })
         }, [])
 
@@ -169,22 +216,25 @@ class RoomEngine {
             let existing = this.currentRoomMembers.find(u => u.user_id === ev.message.user_profile.user_id)
             if (!existing) {
                 this.currentRoomMembers.push(ev.message.user_profile)
-                this.events.publish({ type: 'members_updated' })
+                this.events.post({ type: 'members_updated' })
             } else {
                 console.log('trying to add existing user')
             }
+            this.members.onJoin(ev.message.user_profile)
         } else if (action === 'leave_channel') {
             let index = this.currentRoomMembers.findIndex(u => u.user_id === ev.message.user_id)
             if (index > -1) {
                 this.currentRoomMembers.splice(index, 1)
-                this.events.publish({ type: 'members_updated' })
+                this.events.post({ type: 'members_updated' })
             } else {
                 console.log('trying to remove non-existing user')
             }
+            this.members.onLeave(ev.message.user_id)
         } else if (action === 'add_speaker') {
             let existing = this.currentRoomMembers.find(u => u.user_id === ev.message.user_profile.user_id)
             if (!existing) {
                 this.currentRoomMembers.push(ev.message.user_profile)
+                this.events.post({ type: 'members_updated' })
             } else {
                 let index = this.currentRoomMembers.indexOf(existing)
                 if (!index) {
@@ -192,7 +242,9 @@ class RoomEngine {
                     return
                 }
                 this.currentRoomMembers[index] = { ...existing, ...ev.message.user_profile }
+                this.events.post({ type: 'members_updated' })
             }
+            this.members.onAddSpeaker(ev.message.user_profile)
         } else {
             console.log('unknown event', ev.message)
         }

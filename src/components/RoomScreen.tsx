@@ -53,15 +53,14 @@ const Spacer = ({h}: {h: number}) => {
 export const RoomScreen = () => {
     const speaking = sharedRoomEngine.useCurrentlySpeaking()
     const currentRoom = sharedRoomEngine.useCurrentRoom()
-    const members = sharedRoomEngine.useMembers()
+
+    let speakers = sharedRoomEngine.members.useList('speakers')
+    let followedBySpeakers = sharedRoomEngine.members.useList('followed_by_speakers')
+    let listeners = sharedRoomEngine.members.useList('listeners')
 
     if (!currentRoom) {
         return <SpinnerSplash/>
     }
-
-    let speakers = members.filter(u => u.is_speaker)
-    let followedBySpeakers = members.filter(u => !u.is_speaker && u.is_followed_by_speaker)
-    let listeners = members.filter(u => !u.is_speaker && !u.is_followed_by_speaker)
 
     return (
         <div style={{ padding: 20 }}>

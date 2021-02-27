@@ -1,13 +1,13 @@
 import { v4 as uuidv4 } from 'uuid'
 import fetch from 'node-fetch'
-import { PubSub } from '../utils/PubSub'
+import { PubSub, XPubSub } from '../utils/PubSub'
 import { useEffect, useState } from 'react'
 import { delay } from '../utils/time'
 
 class ClubHouseApi {
     private token: string | undefined
     private uid: number | undefined
-    private events = new PubSub<{ type: 'auth_state_change' }>()
+    private events = new XPubSub<{ type: 'auth_state_change' }>()
 
     public apiBase = 'https://www.clubhouseapi.com/api'
 
@@ -36,7 +36,7 @@ class ClubHouseApi {
         localStorage.setItem('CH-token', token)
         localStorage.setItem('CH-uid', uid.toString(10))
         await delay(2000)
-        this.events.publish({ type: 'auth_state_change' })
+        this.events.post({ type: 'auth_state_change' })
     }
 
     initialize() {
@@ -67,10 +67,8 @@ class ClubHouseApi {
     useAuthorized() {
         let [isAuthorized, setIsAuthorized] = useState(this.isAuthorized())
         useEffect(() => {
-            return this.events.subscribe((ev) => {
-                if (ev.type === 'auth_state_change') {
-                    setIsAuthorized(this.isAuthorized())
-                }
+            return this.events.subscribe('auth_state_change', (ev) => {
+                setIsAuthorized(this.isAuthorized())
             })
         }, [])
 
